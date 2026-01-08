@@ -30,7 +30,7 @@ const App: React.FC = () => {
       liquidityPool: 50000 + Math.random() * 100000
     }))
   );
-  const [selectedCoinId, setSelectedCoinId] = useState<string>(INITIAL_COINS[0].id);
+  const [selectedCoinId, setSelectedCoinId] = useState<string>(INITIAL_COINS[0]?.id || '');
   const [user, setUser] = useState<UserState>({
     balance: INITIAL_BALANCE,
     portfolio: [],
@@ -57,13 +57,14 @@ const App: React.FC = () => {
 
   // --- Local News Generator ---
   const pushNews = useCallback((coin: Coin, type: keyof typeof NEWS_TEMPLATES) => {
+    if (!coin) return;
     const templates = NEWS_TEMPLATES[type];
     const rawTemplate = templates[Math.floor(Math.random() * templates.length)];
     const randHex = Math.random().toString(16).slice(2, 6).toUpperCase();
     const randAmount = (Math.random() * 5000).toLocaleString(undefined, { maximumFractionDigits: 0 });
     
     const title = rawTemplate
-      .replace(/\[SYMBOL\]/g, coin.symbol)
+      .replace(/\[SYMBOL\]/g, coin.symbol || '???')
       .replace(/\[RAND\]/g, randHex)
       .replace(/\[AMOUNT\]/g, randAmount);
 
@@ -94,7 +95,7 @@ const App: React.FC = () => {
         }
 
         return nextCoins.map(coin => {
-          if (coin.isRugged) return coin;
+          if (!coin || coin.isRugged) return coin;
 
           let changePercent = (Math.random() - 0.495) * 0.08; 
           
@@ -114,7 +115,7 @@ const App: React.FC = () => {
           let newPrice = coin.price * (1 + changePercent);
           
           // Random Rug Pull for non-user coins
-          if (!coin.isUserCreated && Math.random() < coin.scamLikelihood * 0.012) {
+          if (!coin.isUserCreated && Math.random() < (coin.scamLikelihood || 0) * 0.012) {
             isRugged = true;
             newPrice = 0.00000001;
             pushNews(coin, 'RUG');
@@ -131,13 +132,13 @@ const App: React.FC = () => {
             }
           }
 
-          const newHistory = [...coin.history, { time: Date.now(), value: newPrice }].slice(-30);
+          const newHistory = [...(coin.history || []), { time: Date.now(), value: newPrice }].slice(-30);
           return { 
             ...coin, 
             price: newPrice, 
             isRugged, 
             history: newHistory,
-            change24h: coin.history.length > 0 ? ((newPrice - coin.history[0].value) / coin.history[0].value) * 100 : 0
+            change24h: (coin.history && coin.history.length > 0) ? ((newPrice - coin.history[0].value) / coin.history[0].value) * 100 : 0
           };
         });
       });
@@ -214,7 +215,7 @@ const App: React.FC = () => {
     if (!coin || !coin.isUserCreated || coin.isRugged) return;
     setCoins(prev => prev.map(c => {
       if (c.id === selectedCoinId) {
-        return { ...c, price: c.price * 1.5, scamLikelihood: Math.min(1, c.scamLikelihood + 0.15) };
+        return { ...c, price: c.price * 1.5, scamLikelihood: Math.min(1, (c.scamLikelihood || 0) + 0.15) };
       }
       return c;
     }));
@@ -226,7 +227,7 @@ const App: React.FC = () => {
   const handleBuy = () => {
     const amountToSpend = parseFloat(tradeAmount);
     if (!selectedCoin || isNaN(amountToSpend) || amountToSpend <= 0 || amountToSpend > user.balance || selectedCoin.isRugged) return;
-    const coinsToBuy = (amountToSpend / selectedCoin.price) * (1 - selectedCoin.tax / 100);
+    const coinsToBuy = (amountToSpend / selectedCoin.price) * (1 - (selectedCoin.tax || 0) / 100);
 
     if (selectedCoin.isUserCreated) {
       setCoins(prev => prev.map(c => c.id === selectedCoinId ? { ...c, liquidityPool: (c.liquidityPool || 0) + (amountToSpend * 0.9) } : c));
@@ -270,7 +271,7 @@ const App: React.FC = () => {
   const getSentiment = (coin?: Coin) => {
     if (!coin) return { label: 'LOADING', color: 'text-gray-500', score: 50 };
     if (coin.isRugged) return { label: 'CRITICAL', color: 'text-red-600', score: 0 };
-    const priceChange = coin.change24h;
+    const priceChange = coin.change24h || 0;
     if (priceChange > 30) return { label: 'MOONING', color: 'text-green-400', score: 95 };
     if (priceChange > 10) return { label: 'BULLISH', color: 'text-green-500', score: 75 };
     if (priceChange < -20) return { label: 'BLOOD IN STREETS', color: 'text-red-500', score: 15 };
@@ -312,14 +313,14 @@ const App: React.FC = () => {
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
               <div className="flex items-center gap-4">
                 <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-2xl border-2 ${selectedCoin?.isUserCreated ? 'bg-pink-500/20 border-pink-500' : 'bg-gray-800 border-[#333]'}`}>
-                  {selectedCoin?.symbol[0] || '?'}
+                  {selectedCoin?.symbol?.[0] || '?'}
                 </div>
                 <div>
                   <h2 className="text-3xl font-black text-white flex items-center gap-2">
-                    {selectedCoin?.name || 'Loading...'}
+                    {selectedCoin?.name || 'Select a Coin'}
                   </h2>
                   <div className="flex items-center gap-3">
-                    <span className="text-gray-500 font-mono font-bold uppercase tracking-widest">{selectedCoin?.symbol || '...'}</span>
+                    <span className="text-gray-500 font-mono font-bold uppercase tracking-widest">{selectedCoin?.symbol || '---'}</span>
                     <div className="flex items-center gap-2 bg-black/40 px-3 py-1 rounded-full border border-white/5">
                         <Radar className={`w-3 h-3 ${sentiment.color}`} />
                         <span className={`text-[10px] font-black uppercase tracking-tighter ${sentiment.color}`}>
@@ -331,10 +332,10 @@ const App: React.FC = () => {
               </div>
               <div className="text-right">
                 <p className="text-4xl font-black font-mono text-white tracking-tighter">
-                    ${selectedCoin?.price.toFixed(selectedCoin?.price < 0.01 ? 8 : 4)}
+                    ${selectedCoin?.price?.toFixed((selectedCoin?.price || 0) < 0.01 ? 8 : 4) || '0.00'}
                 </p>
-                <div className={`text-sm font-bold font-mono ${selectedCoin?.change24h >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                    {selectedCoin?.change24h > 0 ? '+' : ''}{selectedCoin?.change24h.toFixed(2)}%
+                <div className={`text-sm font-bold font-mono ${(selectedCoin?.change24h || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    {(selectedCoin?.change24h || 0) > 0 ? '+' : ''}{(selectedCoin?.change24h || 0).toFixed(2)}%
                 </div>
               </div>
             </div>
@@ -347,7 +348,7 @@ const App: React.FC = () => {
                         <h4 className="text-sm font-black text-pink-500 flex items-center gap-2 uppercase">
                             <Skull className="w-5 h-5" /> DEV CONSOLE
                         </h4>
-                        <span className="text-[10px] text-gray-500 font-bold uppercase">Pool: ${selectedCoin.liquidityPool?.toFixed(2)}</span>
+                        <span className="text-[10px] text-gray-500 font-bold uppercase">Pool: ${selectedCoin.liquidityPool?.toFixed(2) || '0.00'}</span>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                         <button onClick={handleDevPump} className="group relative flex items-center justify-center gap-2 bg-green-500 hover:bg-green-600 text-white font-black py-4 rounded-xl transition-all overflow-hidden shadow-lg shadow-green-500/20">
@@ -384,43 +385,46 @@ const App: React.FC = () => {
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-white/5">
-                        {coins.slice().reverse().map(coin => (
-                            <tr 
-                                key={coin.id} 
-                                className={`hover:bg-white/5 cursor-pointer transition-colors group ${selectedCoinId === coin.id ? 'bg-white/5 border-l-4 border-pink-500' : 'border-l-4 border-transparent'}`}
-                                onClick={() => setSelectedCoinId(coin.id)}
-                            >
-                                <td className="px-6 py-5">
-                                    <div className="flex items-center gap-4">
-                                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-black ${coin.isUserCreated ? 'bg-pink-500/20 text-pink-500' : 'bg-gray-800 text-gray-400'}`}>
-                                            {coin.symbol[0]}
-                                        </div>
-                                        <div>
-                                            <p className="font-black text-white text-base leading-none mb-1 group-hover:text-pink-400 transition-colors">{coin.name}</p>
-                                            <p className="text-[10px] text-gray-500 font-bold font-mono tracking-widest uppercase">{coin.symbol} {coin.isUserCreated && '• DEVELOPER'}</p>
-                                        </div>
-                                    </div>
-                                </td>
-                                <td className="px-6 py-5 font-mono text-sm font-bold text-gray-300">
-                                    ${coin.price.toFixed(coin.price < 0.01 ? 8 : 4)}
-                                </td>
-                                <td className="px-6 py-5">
-                                    {coin.isRugged ? (
-                                        <span className="text-[9px] bg-red-600 text-white px-2 py-1 rounded-sm font-black italic shadow-lg shadow-red-600/20">REKT</span>
-                                    ) : (
-                                        <div className="flex items-center gap-2">
-                                            <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${coin.change24h > 0 ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                                            <span className={`text-xs font-black font-mono ${coin.change24h > 0 ? 'text-green-500' : 'text-red-500'}`}>
-                                                {coin.change24h.toFixed(1)}%
-                                            </span>
-                                        </div>
-                                    )}
-                                </td>
-                                <td className="px-6 py-5 text-right">
-                                    <button className="text-[10px] font-black uppercase text-gray-500 group-hover:text-white transition-colors tracking-widest">Trade View</button>
-                                </td>
-                            </tr>
-                        ))}
+                        {coins.slice().reverse().map(coin => {
+                            if (!coin) return null;
+                            return (
+                              <tr 
+                                  key={coin.id} 
+                                  className={`hover:bg-white/5 cursor-pointer transition-colors group ${selectedCoinId === coin.id ? 'bg-white/5 border-l-4 border-pink-500' : 'border-l-4 border-transparent'}`}
+                                  onClick={() => setSelectedCoinId(coin.id)}
+                              >
+                                  <td className="px-6 py-5">
+                                      <div className="flex items-center gap-4">
+                                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-black ${coin.isUserCreated ? 'bg-pink-500/20 text-pink-500' : 'bg-gray-800 text-gray-400'}`}>
+                                              {coin.symbol?.[0] || '?'}
+                                          </div>
+                                          <div>
+                                              <p className="font-black text-white text-base leading-none mb-1 group-hover:text-pink-400 transition-colors">{coin.name}</p>
+                                              <p className="text-[10px] text-gray-500 font-bold font-mono tracking-widest uppercase">{coin.symbol} {coin.isUserCreated && '• DEVELOPER'}</p>
+                                          </div>
+                                      </div>
+                                  </td>
+                                  <td className="px-6 py-5 font-mono text-sm font-bold text-gray-300">
+                                      ${coin.price?.toFixed(coin.price < 0.01 ? 8 : 4) || '0.00'}
+                                  </td>
+                                  <td className="px-6 py-5">
+                                      {coin.isRugged ? (
+                                          <span className="text-[9px] bg-red-600 text-white px-2 py-1 rounded-sm font-black italic shadow-lg shadow-red-600/20">REKT</span>
+                                      ) : (
+                                          <div className="flex items-center gap-2">
+                                              <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${(coin.change24h || 0) > 0 ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                                              <span className={`text-xs font-black font-mono ${(coin.change24h || 0) > 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                                  {(coin.change24h || 0).toFixed(1)}%
+                                              </span>
+                                          </div>
+                                      )}
+                                  </td>
+                                  <td className="px-6 py-5 text-right">
+                                      <button className="text-[10px] font-black uppercase text-gray-500 group-hover:text-white transition-colors tracking-widest">Trade View</button>
+                                  </td>
+                              </tr>
+                            );
+                        })}
                     </tbody>
                 </table>
             </div>
@@ -450,9 +454,9 @@ const App: React.FC = () => {
 
                 <div className="space-y-3 pt-2">
                     <button 
-                        disabled={selectedCoin?.isRugged || parseFloat(tradeAmount) > user.balance}
+                        disabled={!selectedCoin || selectedCoin.isRugged || parseFloat(tradeAmount) > user.balance}
                         className={`w-full py-5 rounded-2xl font-black text-xl shadow-2xl transition-all active:scale-95 ${
-                            selectedCoin?.isRugged 
+                            !selectedCoin || selectedCoin.isRugged 
                             ? 'bg-gray-800 text-gray-600 cursor-not-allowed' 
                             : 'bg-green-500 hover:bg-green-600 text-white shadow-green-500/30'
                         }`}
@@ -461,7 +465,7 @@ const App: React.FC = () => {
                         {selectedCoin?.isRugged ? 'MARKET COLLAPSED' : 'EXECUTE BUY'}
                     </button>
                     <button 
-                        disabled={selectedCoin?.isRugged || !(user.portfolio.find(p => p.coinId === selectedCoinId)?.amount)}
+                        disabled={!selectedCoin || selectedCoin.isRugged || !(user.portfolio.find(p => p.coinId === selectedCoinId)?.amount)}
                         className="w-full py-4 rounded-2xl font-black text-sm border-2 border-red-500/30 text-red-500 hover:bg-red-500/10 transition-all uppercase tracking-widest"
                         onClick={handleSell}
                     >
@@ -499,7 +503,7 @@ const App: React.FC = () => {
                             return (
                                 <div key={item.coinId} className="flex justify-between items-center p-4 bg-white/5 rounded-2xl border border-white/5 hover:border-white/10 transition-all cursor-pointer" onClick={() => setSelectedCoinId(coin.id)}>
                                     <div className="flex items-center gap-3">
-                                        <div className="w-8 h-8 bg-gray-800 rounded-lg flex items-center justify-center font-black text-xs">{coin.symbol[0]}</div>
+                                        <div className="w-8 h-8 bg-gray-800 rounded-lg flex items-center justify-center font-black text-xs">{coin.symbol?.[0] || '?'}</div>
                                         <div>
                                             <p className="font-black text-sm text-white">{coin.symbol}</p>
                                             <p className="text-[9px] text-gray-500 font-bold uppercase">{item.amount.toLocaleString(undefined, {maximumFractionDigits: 0})} tokens</p>
@@ -567,11 +571,11 @@ const App: React.FC = () => {
                         <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <label className="text-[10px] font-black text-gray-500 uppercase block mb-2 tracking-widest">Dev Tax (%)</label>
-                                <input type="number" className="w-full bg-black/60 border border-white/5 p-4 rounded-xl outline-none focus:border-pink-500 font-mono text-white" value={creatorForm.tax} onChange={e => setCreatorForm({...creatorForm, tax: parseInt(e.target.value)})} />
+                                <input type="number" className="w-full bg-black/60 border border-white/5 p-4 rounded-xl outline-none focus:border-pink-500 font-mono text-white" value={creatorForm.tax} onChange={e => setCreatorForm({...creatorForm, tax: parseInt(e.target.value) || 0})} />
                             </div>
                             <div>
                                 <label className="text-[10px] font-black text-gray-500 uppercase block mb-2 tracking-widest">Liquidity ($)</label>
-                                <input type="number" className="w-full bg-black/60 border border-white/5 p-4 rounded-xl outline-none focus:border-pink-500 font-mono text-white" value={creatorForm.initialLiquidity} onChange={e => setCreatorForm({...creatorForm, initialLiquidity: parseInt(e.target.value)})} />
+                                <input type="number" className="w-full bg-black/60 border border-white/5 p-4 rounded-xl outline-none focus:border-pink-500 font-mono text-white" value={creatorForm.initialLiquidity} onChange={e => setCreatorForm({...creatorForm, initialLiquidity: parseInt(e.target.value) || 0})} />
                             </div>
                         </div>
                       </div>
