@@ -57,7 +57,7 @@ const App: React.FC = () => {
 
   // --- Local News Generator ---
   const pushNews = useCallback((coin: Coin, type: keyof typeof NEWS_TEMPLATES) => {
-    if (!coin) return;
+    if (!coin || !coin.symbol) return;
     const templates = NEWS_TEMPLATES[type];
     const rawTemplate = templates[Math.floor(Math.random() * templates.length)];
     const randHex = Math.random().toString(16).slice(2, 6).toUpperCase();
@@ -127,7 +127,7 @@ const App: React.FC = () => {
               setShowRugModal({ 
                 isOpen: true, 
                 summary: `You lost $${loss}. ${lesson}`, 
-                coinName: coin.name 
+                coinName: coin.name || 'Unknown Asset'
               });
             }
           }
@@ -153,7 +153,7 @@ const App: React.FC = () => {
     const prefixes = ["Safe", "Pepe", "Elon", "Moon", "Turbo", "Alpha", "Baby", "Doge"];
     const suffixes = ["Inu", "Mars", "Cash", "Protocol", "Swap", "Rich", "Rocket"];
     const name = `${prefixes[Math.floor(Math.random() * prefixes.length)]} ${suffixes[Math.floor(Math.random() * suffixes.length)]}`;
-    const symbol = name.split(' ').map(n => n[0]).join('') + Math.floor(Math.random()*99);
+    const symbol = (name.split(' ').map(n => n[0]).join('') + Math.floor(Math.random()*99)).toUpperCase();
     const id = symbol.toLowerCase() + '-' + Date.now();
     const price = Math.random() * 0.2;
     
