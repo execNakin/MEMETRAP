@@ -27,7 +27,8 @@ const App: React.FC = () => {
     INITIAL_COINS.map(c => ({
       ...c,
       history: [{ time: Date.now(), value: c.price }],
-      liquidityPool: 50000 + Math.random() * 100000
+      liquidityPool: 50000 + Math.random() * 100000,
+      volume24h: Math.random() * 50000
     }))
   );
   const [selectedCoinId, setSelectedCoinId] = useState<string>(INITIAL_COINS[0]?.id || '');
@@ -97,6 +98,7 @@ const App: React.FC = () => {
         return nextCoins.map(coin => {
           if (!coin || coin.isRugged) return coin;
 
+          // Base price movement
           let changePercent = (Math.random() - 0.495) * 0.08; 
           
           // Random bot hype
@@ -113,6 +115,17 @@ const App: React.FC = () => {
 
           let isRugged = coin.isRugged;
           let newPrice = coin.price * (1 + changePercent);
+          
+          // --- Dynamic Pool & Volume Simulation ---
+          // Every tick, we simulate "Simulated Volume" (bots trading)
+          // Volume is roughly proportional to price volatility and market cap
+          const simulatedTradeVol = Math.abs(changePercent) * (coin.marketCap || 10000) * (2 + Math.random() * 10);
+          const currentPool = coin.liquidityPool || 1000;
+          
+          // If price went up, net inflow to pool. If price went down, net outflow.
+          const poolNetFlow = changePercent * simulatedTradeVol * 0.5;
+          const newLiquidityPool = Math.max(100, currentPool + poolNetFlow);
+          const newVolume24h = (coin.volume24h || 0) * 0.95 + simulatedTradeVol; // Decay volume over time
           
           // Random Rug Pull for non-user coins
           if (!coin.isUserCreated && Math.random() < (coin.scamLikelihood || 0) * 0.012) {
@@ -138,6 +151,8 @@ const App: React.FC = () => {
             price: newPrice, 
             isRugged, 
             history: newHistory,
+            liquidityPool: newLiquidityPool,
+            volume24h: newVolume24h,
             change24h: (coin.history && coin.history.length > 0) ? ((newPrice - coin.history[0].value) / coin.history[0].value) * 100 : 0
           };
         });
@@ -160,14 +175,14 @@ const App: React.FC = () => {
     return {
       id, symbol, name, price,
       change24h: 0,
-      volume24h: Math.random() * 100000,
+      volume24h: Math.random() * 5000,
       scamLikelihood: Math.random() * 0.9,
       isRugged: false,
       history: [{ time: Date.now(), value: price }],
       creatorWallet: '0x' + Math.random().toString(16).slice(2, 6),
       description: 'Community-driven moonshot.',
       tax: Math.floor(Math.random() * 15),
-      marketCap: Math.random() * 200000,
+      marketCap: 5000 + Math.random() * 200000,
       liquidityPool: 2000 + Math.random() * 5000
     };
   };
@@ -205,7 +220,7 @@ const App: React.FC = () => {
     const coin = coins.find(c => c.id === selectedCoinId);
     if (!coin || !coin.isUserCreated) return;
     const profit = coin.liquidityPool || 0;
-    setCoins(prev => prev.map(c => c.id === selectedCoinId ? { ...c, isRugged: true, price: 0.00000001 } : c));
+    setCoins(prev => prev.map(c => c.id === selectedCoinId ? { ...c, isRugged: true, price: 0.00000001, liquidityPool: 0 } : c));
     setUser(prev => ({ ...prev, balance: prev.balance + profit, greedScore: 100 }));
     pushNews(coin, 'RUG');
   };
@@ -215,7 +230,12 @@ const App: React.FC = () => {
     if (!coin || !coin.isUserCreated || coin.isRugged) return;
     setCoins(prev => prev.map(c => {
       if (c.id === selectedCoinId) {
-        return { ...c, price: c.price * 1.5, scamLikelihood: Math.min(1, (c.scamLikelihood || 0) + 0.15) };
+        return { 
+          ...c, 
+          price: c.price * 1.5, 
+          scamLikelihood: Math.min(1, (c.scamLikelihood || 0) + 0.15),
+          liquidityPool: (c.liquidityPool || 0) * 1.3 // Artificially pump pool
+        };
       }
       return c;
     }));
@@ -229,9 +249,11 @@ const App: React.FC = () => {
     if (!selectedCoin || isNaN(amountToSpend) || amountToSpend <= 0 || amountToSpend > user.balance || selectedCoin.isRugged) return;
     const coinsToBuy = (amountToSpend / selectedCoin.price) * (1 - (selectedCoin.tax || 0) / 100);
 
-    if (selectedCoin.isUserCreated) {
-      setCoins(prev => prev.map(c => c.id === selectedCoinId ? { ...c, liquidityPool: (c.liquidityPool || 0) + (amountToSpend * 0.9) } : c));
-    }
+    setCoins(prev => prev.map(c => 
+      c.id === selectedCoinId 
+        ? { ...c, liquidityPool: (c.liquidityPool || 0) + (amountToSpend * 0.9), volume24h: (c.volume24h || 0) + amountToSpend } 
+        : c
+    ));
 
     setUser(prev => {
       const existing = prev.portfolio.find(p => p.coinId === selectedCoin.id);
@@ -248,9 +270,11 @@ const App: React.FC = () => {
     if (!selectedCoin || !holding || holding.amount <= 0 || selectedCoin.isRugged) return;
     const saleValue = holding.amount * selectedCoin.price;
     
-    if (selectedCoin.isUserCreated) {
-      setCoins(prev => prev.map(c => c.id === selectedCoinId ? { ...c, liquidityPool: Math.max(0, (c.liquidityPool || 0) - saleValue) } : c));
-    }
+    setCoins(prev => prev.map(c => 
+      c.id === selectedCoinId 
+        ? { ...c, liquidityPool: Math.max(0, (c.liquidityPool || 0) - saleValue), volume24h: (c.volume24h || 0) + saleValue } 
+        : c
+    ));
 
     setUser(prev => ({
       ...prev,
@@ -342,13 +366,39 @@ const App: React.FC = () => {
 
             <TradingChart data={selectedCoin?.history || []} isRugged={selectedCoin?.isRugged || false} />
 
+            <div className="mt-6 p-5 bg-black/40 border border-white/5 rounded-2xl grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div>
+                  <p className="text-[10px] font-black text-gray-500 uppercase mb-1">Liquidity Pool</p>
+                  <p className={`text-lg font-black font-mono ${selectedCoin?.isRugged ? 'text-red-500' : 'text-white'}`}>
+                    ${selectedCoin?.liquidityPool?.toLocaleString(undefined, { maximumFractionDigits: 0 }) || '0'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-black text-gray-500 uppercase mb-1">24h Volume</p>
+                  <p className="text-lg font-black font-mono text-white">
+                    ${selectedCoin?.volume24h?.toLocaleString(undefined, { maximumFractionDigits: 0 }) || '0'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-black text-gray-500 uppercase mb-1">Risk Level</p>
+                  <p className={`text-lg font-black font-mono ${selectedCoin?.scamLikelihood && selectedCoin.scamLikelihood > 0.6 ? 'text-red-500' : 'text-yellow-500'}`}>
+                    {Math.round((selectedCoin?.scamLikelihood || 0) * 100)}%
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-black text-gray-500 uppercase mb-1">Creator</p>
+                  <p className="text-lg font-black font-mono text-white truncate">
+                    {selectedCoin?.creatorWallet || 'Unknown'}
+                  </p>
+                </div>
+            </div>
+
             {selectedCoin?.isUserCreated && !selectedCoin.isRugged && (
                 <div className="mt-6 p-5 bg-gradient-to-br from-pink-500/10 to-transparent border border-pink-500/20 rounded-2xl">
                     <div className="flex justify-between items-center mb-4">
                         <h4 className="text-sm font-black text-pink-500 flex items-center gap-2 uppercase">
                             <Skull className="w-5 h-5" /> DEV CONSOLE
                         </h4>
-                        <span className="text-[10px] text-gray-500 font-bold uppercase">Pool: ${selectedCoin.liquidityPool?.toFixed(2) || '0.00'}</span>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                         <button onClick={handleDevPump} className="group relative flex items-center justify-center gap-2 bg-green-500 hover:bg-green-600 text-white font-black py-4 rounded-xl transition-all overflow-hidden shadow-lg shadow-green-500/20">
@@ -380,8 +430,8 @@ const App: React.FC = () => {
                         <tr>
                             <th className="px-6 py-4">Asset Name</th>
                             <th className="px-6 py-4">Price (USD)</th>
+                            <th className="px-6 py-4">Pool Depth</th>
                             <th className="px-6 py-4">Status</th>
-                            <th className="px-6 py-4 text-right">Actions</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-white/5">
@@ -407,6 +457,9 @@ const App: React.FC = () => {
                                   <td className="px-6 py-5 font-mono text-sm font-bold text-gray-300">
                                       ${coin.price?.toFixed(coin.price < 0.01 ? 8 : 4) || '0.00'}
                                   </td>
+                                  <td className="px-6 py-5 font-mono text-sm font-bold text-gray-500">
+                                      ${coin.liquidityPool?.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                  </td>
                                   <td className="px-6 py-5">
                                       {coin.isRugged ? (
                                           <span className="text-[9px] bg-red-600 text-white px-2 py-1 rounded-sm font-black italic shadow-lg shadow-red-600/20">REKT</span>
@@ -418,9 +471,6 @@ const App: React.FC = () => {
                                               </span>
                                           </div>
                                       )}
-                                  </td>
-                                  <td className="px-6 py-5 text-right">
-                                      <button className="text-[10px] font-black uppercase text-gray-500 group-hover:text-white transition-colors tracking-widest">Trade View</button>
                                   </td>
                               </tr>
                             );
@@ -479,8 +529,8 @@ const App: React.FC = () => {
                         <span className={(selectedCoin?.tax || 0) > 10 ? 'text-red-500' : 'text-gray-400'}>{selectedCoin?.tax || 0}%</span>
                     </div>
                     <div className="flex justify-between text-[10px] font-black text-gray-600 uppercase">
-                        <span>Expected Outcome</span>
-                        <span className="text-gray-400">Degenerative</span>
+                        <span>Slippage Info</span>
+                        <span className="text-gray-400">Low Liquidity</span>
                     </div>
                 </div>
             </div>
